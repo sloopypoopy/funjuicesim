@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>fun juice sim</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
+</head>
+<body>
+
+<script>
+
+    var BlurPipeline = new Phaser.Class({
+
+        Extends: Phaser.Renderer.WebGL.Pipelines.TextureTintPipeline,
+
+        initialize: function BlurPipeline(game) {
+            Phaser.Renderer.WebGL.Pipelines.TextureTintPipeline.call(this, {
+                game: game,
+                renderer: game.renderer,
+                fragShader: `
+                precision mediump float;
+
+                uniform sampler2D uMainSampler;
+                uniform float uRadius;
+                uniform vec2 uResolution;
+
+                varying vec2 outTexCoord;
+
+                void main(void) {
+                    vec4 sum = vec4(0);
+                    vec2 texCoord = outTexCoord;
+                    vec2 pixelSize = 1.0 / uResolution;
+
+                    for (float x = -5.0; x < 5.0; x++) {
+                        for (float y = -5.0; y < 5.0; y++) {
+                            vec2 offset = vec2(x, y) * uRadius * pixelSize * 0.5;
+                            sum += texture2D(uMainSampler, texCoord + offset);
+                        }
+                    }
+
+                    gl_FragColor = sum / 100.0;
+                }
+            `,
+                uniforms: {
+                    uRadius: 0,
+                    uResolution: new Float32Array([game.config.width, game.config.height])
+                }
+            });
+        }
+    });
+
+    var config = {
+        type: Phaser.AUTO,
+        width: 800,
+        height: 600,
+        physics: {
+            default: 'arcade',
+            arcade: {
+                gravity: { y: 0 },
+                debug: false
+            }
+        },
+        scene: {
+            preload: preload,
+            create: create,
+            update: update
+        }
+    };
+
+    var game = new Phaser.Game(config);
+
+    var car;
+    var cursors;
+    var road;
+    var obstacles;
+    var obstacleTimer;
+    var projectiles;
+    var coins;
+    var scoreText;
+    var score = 0;
+    var stopwatchText;
+    var stopwatchSeconds = 0;
+    var gameStarted = false;
+    var drunkMeterText;
+    var drunkMeterValue = 0;
+    var blurPipeline;
+
+    function preload() {
+        this.load.image('car', 'assets/car.png');
+        this.load.image('road', 'assets/roada.png');
+        this.load.image('obstacle', 'assets/obstacle.png');
+        this.load.image('projectile', 'assets/projectile.png');
+        this.load.image('obstacle_hit', 'assets/obstacle_hit.png');
+        this.load.image('obstacle_2', 'assets/obstacle_2.png');
+        this.load.image('obstacle_2_hit', 'assets/obstacle_2_hit.png');
+        this.load.image('coin', 'assets/coin.png');
+        this.load.image('coin_hit', 'assets/coin_hit.png');
+    }
+
+    function create() {
+        console.log("Create function called.");
+
+        road = this.add.tileSprite(400, 300, config.width, config.height, 'road');
+        car = this.physics.add.sprite(400, 500, 'car');
+        car.setCollideWorldBounds(true);
+        car.setDepth(1);
+
+        cursors = this.input.keyboard.createCursorKeys();
+
+        obstacles = this.physics.add.group({
+            defaultKey: 'obstacle',
+            maxSize: -1,
+            createCallback: function (obstacle) {
+                obstacle.body.setSize(40, 40);
+            }
+        });
+
+        startObstacleSpawn(this);
+
+        projectiles = this.physics.add.group();
+
+        this.physics.add.collider(car, obstacles, collisionHandler.bind(this, this), null, this);
+        this.physics.add.collider(projectiles, obstacles, projectileCollisionHandler.bind(this, this), null, this);
+
+        coins = this.physics.add.group();
+        this.physics.add.overlap(car, coins, coinCollisionHandler.bind(this, this), null, this);
+        this.physics.add.overlap(projectiles, coins, coinCollisionHandler.bind(this, this), null, this);
+
+        this.input.on('pointerdown', fireProjectile, this);
+
+        scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '32px', fill: '#FFF' });
+        stopwatchText = this.add.text(config.width - 150, 16, 'Time: 0', { fontSize: '32px', fill: '#FFF' });
+        drunkMeterText = this.add.text(config.width - 150, 50, 'Drunk Meter: 0', { fontSize: '16px', fill: '#FFF' });
+
+        blurPipeline = this.renderer.addPipeline('BlurPipeline', new BlurPipeline(this.game));
+        this.cameras.main.setRenderToTexture(blurPipeline);
+    }
+
+    function update() {
+        if (gameStarted) {
+            stopwatchText.setText('Time: ' + stopwatchSeconds);
+            drunkMeterText.setText('Drunk Meter: ' + drunkMeterValue);
+
+            var blurAmount = drunkMeterValue * 5;
+            blurPipeline.setFloat1('uRadius', blurAmount);
+
+            road.tilePositionY -= 20 + drunkMeterValue * 5;
+        }
+
+        if (cursors.left.isDown) {
+            car.setVelocityX(-300);
+            car.angle = -10;
+        } else if (cursors.right.isDown) {
+            car.setVelocityX(300);
+            car.angle = 10;
+        } else {
+            car.setVelocityX(0);
+            car.angle = 0;
+        }
+    }
+
+    function startObstacleSpawn(scene) {
+        obstacleTimer = scene.time.addEvent({
+            delay: 2000,
+            callback: spawnObstacles,
+            callbackScope: scene,
+            loop: true
+        });
+
+        startObstacleSpawn2(scene);
+
+        scene.time.addEvent({
+            delay: 5000,
+            callback: spawnCoin,
+            callbackScope: scene,
+            loop: true
+        });
+
+        scene.time.addEvent({
+            delay: 1000,
+            callback: updateStopwatch,
+            callbackScope: scene,
+            loop: true
+        });
+
+        gameStarted = true;
+    }
+
+    function updateStopwatch() {
+        stopwatchSeconds++;
+    }
+
+    function spawnObstacles() {
+        let obstacle = obstacles.create(Phaser.Math.Between(100, 700), -100);
+        obstacle.setVelocityY(Phaser.Math.Between(100, 200));
+    }
+
+    function startObstacleSpawn2(scene) {
+        obstacleTimer = scene.time.addEvent({
+            delay: 3000,
+            callback: () => spawnObstacle2(scene),
+            callbackScope: scene,
+            loop: true
+        });
+    }
+
+    function spawnObstacle2(scene) {
+        let obstacle2 = obstacles.create(Phaser.Math.Between(100, 700), -100, 'obstacle_2');
+        obstacle2.setVelocityY(100);
+        scene.physics.moveToObject(obstacle2, car, 100);
+    }
+
+    function spawnCoin() {
+        let coin = coins.create(Phaser.Math.Between(100, 700), -100, 'coin');
+        coin.setVelocityY(Phaser.Math.Between(100, 200));
+    }
+
+    function collisionHandler(scene, car, obstacle) {
+        var textStyle = { font: "Arial", fontSize: "48px", fill: "#FF0000", align: "center" };
+        var gameOverText = scene.add.text(scene.sys.game.config.width / 2, scene.sys.game.config.height / 2, "THE COPS HAVE CAUGHT YOU DRINKING", textStyle);
+        gameOverText.setOrigin(0.5);
+        scene.time.delayedCall(1000, reloadGame, [], scene);
+        resetStopwatch();
+    }
+
+    function projectileCollisionHandler(scene, projectile, obstacle) {
+        if (obstacle.texture.key === 'obstacle_2') {
+            obstacle.setTexture('obstacle_2_hit');
+        } else {
+            obstacle.setTexture('obstacle_hit');
+        }
+        projectile.destroy();
+
+        if (obstacle.texture.key === 'obstacle') {
+            increaseScore(5 * (Math.pow(2, drunkMeterValue)));
+        } else {
+            increaseScore(1 * (Math.pow(2, drunkMeterValue)));
+        }
+    }
+
+    function coinCollisionHandler(scene, object1, object2) {
+        object2.setTexture('coin_hit');
+        object2.disableBody(true, true);
+
+        increaseScore(10 * (Math.pow(2, drunkMeterValue)));
+    }
+
+    function increaseScore(points) {
+        score += points;
+        scoreText.setText('Score: ' + score);
+    }
+
+    function resetStopwatch() {
+        stopwatchSeconds = 0;
+    }
+
+    function reloadGame(scene) {
+        setTimeout(function () {
+            window.location.reload();
+        }, 1000);
+    }
+
+    function fireProjectile(pointer) {
+        var angle = Phaser.Math.Angle.Between(car.x, car.y, pointer.x, pointer.y);
+        var projectile = projectiles.create(car.x, car.y, 'projectile');
+        projectile.setVelocity(Math.cos(angle) * 500, Math.sin(angle) * 500);
+    }
+
+</script>
+
+</body>
+</html>
