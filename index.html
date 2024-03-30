@@ -107,6 +107,8 @@
         car.setDepth(1);
 
         cursors = this.input.keyboard.createCursorKeys();
+        // Adding event listeners for pointer events
+        this.input.on('pointerdown', fireProjectile, this);
 
         obstacles = this.physics.add.group({
             defaultKey: 'obstacle',
@@ -127,13 +129,11 @@
         this.physics.add.overlap(car, coins, coinCollisionHandler.bind(this, this), null, this);
         this.physics.add.overlap(projectiles, coins, coinCollisionHandler.bind(this, this), null, this);
 
-        this.input.on('pointerdown', fireProjectile, this);
-
         scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '32px', fill: '#FFF' });
         stopwatchText = this.add.text(config.width - 150, 16, 'Time: 0', { fontSize: '32px', fill: '#FFF' });
         drunkMeterText = this.add.text(config.width - 150, 50, 'Drunk Meter: 0', { fontSize: '16px', fill: '#FFF' });
 
-        blurPipeline = this.renderer.addPipeline('BlurPipeline', new BlurPipeline(this.game));
+        blurPipeline = this.renderer.addPipeline('BlurPipeline', new BlurPipeline(this.sys.game)); // Fix applied here
         this.cameras.main.setRenderToTexture(blurPipeline);
     }
 
