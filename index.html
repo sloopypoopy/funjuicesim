@@ -133,7 +133,7 @@
         stopwatchText = this.add.text(config.width - 150, 16, 'Time: 0', { fontSize: '32px', fill: '#FFF' });
         drunkMeterText = this.add.text(config.width - 150, 50, 'Drunk Meter: 0', { fontSize: '16px', fill: '#FFF' });
 
-        blurPipeline = this.renderer.addPipeline('BlurPipeline', new BlurPipeline(this.sys.game)); // Fix applied here
+        blurPipeline = this.renderer.addPipeline('BlurPipeline', new BlurPipeline(this.game));
         this.cameras.main.setRenderToTexture(blurPipeline);
     }
 
