@@ -1,6 +1,7 @@
 # funjuicesim
 dont let the cops catch you enjoying fun juice
-cop car - dont touch him or die
+
+cop - dont touch him or die
 cop car - dont touch or die
 civilian - gives u extra points
 karen - bounces u around to make you touch a cop if you touch it
